@@ -1,0 +1,257 @@
+import tkinter as tk
+from tkinter import messagebox
+import ctypes
+
+# --- 720p GÖRÜNTÜ KALİTESİ (DPI AWARENESS) ---
+# Windows'ta bulanık görünümü (144p hissini) engelleyip yazıları cam gibi (720p+) net yapar.
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except:
+    pass # Mac veya Linux ise bu adımı atlar
+
+# --- RENK PALETİ (Siyah, Koyu Gri ve Koyu Turuncu) ---
+BG_SIYAH = "#0a0a0a"       # Arka plan
+KART_GRI = "#1a1a1a"       # Menü kartları
+KART_HOVER = "#262626"     # Menü kartı üzerine gelince
+TURUNCU = "#d35400"        # Koyu turuncu detaylar
+TURUNCU_HOVER = "#e67e22"  # Buton üzerine gelince açık turuncu
+BEYAZ_METIN = "#f0f0f0"
+GRI_METIN = "#8c8c8c"
+
+# --- YARDIMCI ANİMASYON FONKSİYONLARI ---
+# Renkleri Hexadecimal'den RGB'ye çevirip yavaş yavaş karıştırır (Fade efekti için)
+def hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def fade_animasyonu(canvas, item_id, baslangic_hex, bitis_hex, adim=0, max_adim=15):
+    if adim <= max_adim:
+        r1, g1, b1 = hex_to_rgb(baslangic_hex)
+        r2, g2, b2 = hex_to_rgb(bitis_hex)
+        
+        r = int(r1 + (r2 - r1) * (adim / max_adim))
+        g = int(g1 + (g2 - g1) * (adim / max_adim))
+        b = int(b1 + (b2 - b1) * (adim / max_adim))
+        
+        yeni_renk = f"#{r:02x}{g:02x}{b:02x}"
+        canvas.itemconfig(item_id, fill=yeni_renk)
+        # 15 milisaniyede bir kendini tekrar çağırarak pürüzsüz geçiş (fade) sağlar
+        canvas.after(15, fade_animasyonu, canvas, item_id, baslangic_hex, bitis_hex, adim + 1, max_adim)
+
+# --- OVAL ÇİZİM FONKSİYONU ---
+# Tkinter'da oval köşeli kartlar oluşturmak için poligon matematiği
+def oval_dikdortgen_ciz(canvas, x1, y1, x2, y2, yaricap=25, **kwargs):
+    noktalar = [x1+yaricap, y1, x1+yaricap, y1, x2-yaricap, y1, x2-yaricap, y1, x2, y1, x2, y1+yaricap, x2, y1+yaricap, x2, y2-yaricap, x2, y2-yaricap, x2, y2, x2-yaricap, y2, x2-yaricap, y2, x1+yaricap, y2, x1+yaricap, y2, x1, y2, x1, y2-yaricap, x1, y2-yaricap, x1, y1+yaricap, x1, y1+yaricap, x1, y1]
+    return canvas.create_polygon(noktalar, **kwargs, smooth=True)
+
+class PremiumSiparisSistemi(tk.Tk):
+    def __init__(self):
+        super().__init__()
+
+        # Tam 720p (1280x720) Çözünürlük Ayarı
+        self.title("Kebapçı Kayra - Premium Sipariş Ekranı")
+        self.geometry("1280x720")
+        self.configure(bg=BG_SIYAH)
+        self.resizable(False, False)
+
+        self.siparis_listesi = []
+        self.toplam_tutar = 0
+        self.aktif_kategori = "Ana Yemekler"
+
+        # --- MENÜ VERİLERİ ---
+        self.menu = {
+            "Çorbalar": [
+                {"ad": "Süzme Mercimek", "fiyat": 60, "detay": "Kırmızı mercimek, tereyağı, kemik suyu (250ml)"},
+                {"ad": "Kelle Paça", "fiyat": 110, "detay": "Kuzu kelle, sarımsak, özel sos (300ml)"},
+                {"ad": "Ezogelin", "fiyat": 65, "detay": "Mercimek, bulgur, nane (250ml)"},
+                {"ad": "Beyran Çorbası", "fiyat": 130, "detay": "Kuzu eti, pirinç, bol sarımsak (300ml)"},
+                {"ad": "Domates Çorbası", "fiyat": 55, "detay": "Taze domates, kaşar rendesi (250ml)"}
+            ],
+            "Ana Yemekler": [
+                {"ad": "Zırh Kıyma Adana", "fiyat": 280, "detay": "Kuzu boşluk, kuyruk yağı, kök biber (180g)"},
+                {"ad": "Kayra Özel İskender", "fiyat": 350, "detay": "Yaprak döner, tava pidesi, manda yoğurdu (200g)"},
+                {"ad": "Kuzu Şiş", "fiyat": 310, "detay": "Terbiyeli kuzu but, köz biber, soğan (200g)"},
+                {"ad": "Ali Nazik Kebap", "fiyat": 320, "detay": "Köz patlıcan, süzme yoğurt, kavurma (220g)"},
+                {"ad": "Tavuk Pirzola", "fiyat": 220, "detay": "Özel soslu ızgara tavuk, bulgur pilavı (250g)"}
+            ],
+            "Tatlılar": [
+                {"ad": "Gaziantep Baklava", "fiyat": 150, "detay": "Boz fıstık, ince yufka, sade yağ (3 Dilim)"},
+                {"ad": "Hatay Künefesi", "fiyat": 130, "detay": "Tuzsuz peynir, kadayıf, özel şerbet (150g)"},
+                {"ad": "Fırın Sütlaç", "fiyat": 80, "detay": "Günlük süt, pirinç, fındık kırığı (200g)"},
+                {"ad": "Havuç Dilimi", "fiyat": 170, "detay": "Bol fıstıklı, dondurma ile servis edilir (1 Dilim)"},
+                {"ad": "Katmer", "fiyat": 180, "detay": "İnce hamur, kaymak, toz Antep fıstığı (1 Porsiyon)"}
+            ],
+            "İçecekler": [
+                {"ad": "Kutu Kola", "fiyat": 50, "detay": "Soğuk gazlı içecek (330ml)"},
+                {"ad": "Açık Ayran", "fiyat": 40, "detay": "Köpüklü yayık ayranı (300ml)"},
+                {"ad": "Acılı Şalgam", "fiyat": 45, "detay": "Adana'dan özel getirilmiş acılı (330ml)"},
+                {"ad": "Niğde Gazozu", "fiyat": 45, "detay": "Ahududu aromalı klasik gazoz (250ml)"},
+                {"ad": "Cam Şişe Su", "fiyat": 25, "detay": "Doğal kaynak suyu (330ml)"}
+            ]
+        }
+
+        self.arayuz_olustur()
+        self.kategori_goster(self.aktif_kategori)
+
+    def arayuz_olustur(self):
+        # 1. SOL MENÜ (Navigasyon)
+        self.sol_menu = tk.Canvas(self, bg=BG_SIYAH, width=250, height=720, highlightthickness=0)
+        self.sol_menu.place(x=0, y=0)
+        
+        # Logo Çizimi
+        self.sol_menu.create_text(125, 60, text="KEBAPÇI", font=("Segoe UI Black", 24), fill=BEYAZ_METIN)
+        self.sol_menu.create_text(125, 95, text="KAYRA", font=("Segoe UI Black", 24), fill=TURUNCU)
+        self.sol_menu.create_line(30, 130, 220, 130, fill=KART_GRI, width=2)
+
+        # Kategori Butonları (Oval ve Fade Animasyonlu)
+        y_pos = 180
+        self.kategori_butonlari = {}
+        for kategori in self.menu.keys():
+            # Buton Arka Planı (Oval Poligon)
+            btn_bg = oval_dikdortgen_ciz(self.sol_menu, 20, y_pos, 230, y_pos+50, yaricap=15, fill=BG_SIYAH, outline=KART_GRI, width=2)
+            btn_text = self.sol_menu.create_text(125, y_pos+25, text=kategori.upper(), font=("Segoe UI", 12, "bold"), fill=GRI_METIN)
+            
+            # Tıklama ve Animasyon Olayları
+            for item in (btn_bg, btn_text):
+                self.sol_menu.tag_bind(item, "<Enter>", lambda e, b=btn_bg, t=btn_text: self.kategori_hover(b, t, True))
+                self.sol_menu.tag_bind(item, "<Leave>", lambda e, b=btn_bg, t=btn_text, k=kategori: self.kategori_hover(b, t, False, k))
+                self.sol_menu.tag_bind(item, "<Button-1>", lambda e, k=kategori: self.kategori_goster(k))
+            
+            self.kategori_butonlari[kategori] = (btn_bg, btn_text)
+            y_pos += 70
+
+        # 2. ORTA ALAN (Menü Kartları)
+        self.orta_alan = tk.Canvas(self, bg=BG_SIYAH, width=650, height=720, highlightthickness=0)
+        self.orta_alan.place(x=270, y=0)
+
+        # 3. SAĞ ALAN (Sepet)
+        self.sag_sepet = tk.Canvas(self, bg=KART_GRI, width=330, height=720, highlightthickness=0)
+        self.sag_sepet.place(x=950, y=0)
+        
+        self.sag_sepet.create_text(165, 50, text="SİPARİŞ SEPETİ", font=("Segoe UI Black", 16), fill=BEYAZ_METIN)
+        self.sag_sepet.create_line(30, 80, 300, 80, fill="#333333", width=2)
+        
+        # Siparişi Onayla Butonu (Turuncu)
+        onay_bg = oval_dikdortgen_ciz(self.sag_sepet, 30, 630, 300, 680, yaricap=20, fill=TURUNCU)
+        onay_txt = self.sag_sepet.create_text(165, 655, text="SİPARİŞİ ONAYLA", font=("Segoe UI", 14, "bold"), fill=BEYAZ_METIN)
+        
+        self.sag_sepet.tag_bind(onay_bg, "<Enter>", lambda e: fade_animasyonu(self.sag_sepet, onay_bg, TURUNCU, TURUNCU_HOVER))
+        self.sag_sepet.tag_bind(onay_bg, "<Leave>", lambda e: fade_animasyonu(self.sag_sepet, onay_bg, TURUNCU_HOVER, TURUNCU))
+        self.sag_sepet.tag_bind(onay_txt, "<Enter>", lambda e: fade_animasyonu(self.sag_sepet, onay_bg, TURUNCU, TURUNCU_HOVER))
+        self.sag_sepet.tag_bind(onay_txt, "<Leave>", lambda e: fade_animasyonu(self.sag_sepet, onay_bg, TURUNCU_HOVER, TURUNCU))
+        
+        self.sag_sepet.tag_bind(onay_bg, "<Button-1>", lambda e: self.siparis_onayla())
+        self.sag_sepet.tag_bind(onay_txt, "<Button-1>", lambda e: self.siparis_onayla())
+
+        self.sepeti_ciz()
+
+    def kategori_hover(self, bg_id, text_id, is_enter, kategori=None):
+        # Aktif kategori ise rengi turuncuda kalsın, solmasın
+        if kategori == self.aktif_kategori and not is_enter:
+            return
+        
+        if is_enter:
+            fade_animasyonu(self.sol_menu, bg_id, BG_SIYAH, TURUNCU)
+            self.sol_menu.itemconfig(text_id, fill=BEYAZ_METIN)
+            self.sol_menu.config(cursor="hand2")
+        else:
+            fade_animasyonu(self.sol_menu, bg_id, TURUNCU, BG_SIYAH)
+            self.sol_menu.itemconfig(text_id, fill=GRI_METIN)
+            self.sol_menu.config(cursor="")
+
+    def kategori_goster(self, kategori_adi):
+        self.aktif_kategori = kategori_adi
+        
+        # Sol menüdeki aktif butonu turuncu yap, diğerlerini sıfırla
+        for k, (bg_id, txt_id) in self.kategori_butonlari.items():
+            if k == kategori_adi:
+                self.sol_menu.itemconfig(bg_id, fill=TURUNCU, outline=TURUNCU)
+                self.sol_menu.itemconfig(txt_id, fill=BEYAZ_METIN)
+            else:
+                self.sol_menu.itemconfig(bg_id, fill=BG_SIYAH, outline=KART_GRI)
+                self.sol_menu.itemconfig(txt_id, fill=GRI_METIN)
+
+        # Orta alanı temizle
+        self.orta_alan.delete("all")
+        
+        # Kategori Başlığı
+        self.orta_alan.create_text(20, 50, text=kategori_adi.upper(), font=("Segoe UI Black", 20), fill=BEYAZ_METIN, anchor="w")
+        self.orta_alan.create_text(20, 80, text="Menümüzdeki en taze ve günlük ürünler.", font=("Segoe UI", 11), fill=GRI_METIN, anchor="w")
+
+        # 5 Ürünü "Oval Kartlar" şeklinde çizme
+        y_pos = 120
+        for urun in self.menu[kategori_adi]:
+            # Kart Arka Planı (Oval)
+            kart = oval_dikdortgen_ciz(self.orta_alan, 20, y_pos, 630, y_pos+90, yaricap=20, fill=KART_GRI)
+            
+            # Ürün Bilgileri
+            self.orta_alan.create_text(40, y_pos+30, text=urun["ad"], font=("Segoe UI", 16, "bold"), fill=BEYAZ_METIN, anchor="w")
+            self.orta_alan.create_text(40, y_pos+60, text=urun["detay"], font=("Segoe UI", 11), fill=GRI_METIN, anchor="w")
+            
+            # Fiyat
+            self.orta_alan.create_text(480, y_pos+45, text=f"{urun['fiyat']} TL", font=("Segoe UI", 18, "bold"), fill=TURUNCU, anchor="e")
+            
+            # "Ekle" Butonu (Oval)
+            btn_ekle = oval_dikdortgen_ciz(self.orta_alan, 500, y_pos+25, 610, y_pos+65, yaricap=15, fill=BG_SIYAH, outline=TURUNCU, width=2)
+            txt_ekle = self.orta_alan.create_text(555, y_pos+45, text="+ EKLE", font=("Segoe UI", 11, "bold"), fill=TURUNCU)
+
+            # Animasyonlar (Kart Hover ve Buton Hover)
+            self.orta_alan.tag_bind(kart, "<Enter>", lambda e, k=kart: fade_animasyonu(self.orta_alan, k, KART_GRI, KART_HOVER))
+            self.orta_alan.tag_bind(kart, "<Leave>", lambda e, k=kart: fade_animasyonu(self.orta_alan, k, KART_HOVER, KART_GRI))
+
+            self.orta_alan.tag_bind(btn_ekle, "<Enter>", lambda e, b=btn_ekle, t=txt_ekle: self.buton_hover(b, t, True))
+            self.orta_alan.tag_bind(btn_ekle, "<Leave>", lambda e, b=btn_ekle, t=txt_ekle: self.buton_hover(b, t, False))
+            self.orta_alan.tag_bind(txt_ekle, "<Enter>", lambda e, b=btn_ekle, t=txt_ekle: self.buton_hover(b, t, True))
+            self.orta_alan.tag_bind(txt_ekle, "<Leave>", lambda e, b=btn_ekle, t=txt_ekle: self.buton_hover(b, t, False))
+            
+            # Tıklama Olayı (Ekleme)
+            self.orta_alan.tag_bind(btn_ekle, "<Button-1>", lambda e, u=urun: self.sepete_ekle(u))
+            self.orta_alan.tag_bind(txt_ekle, "<Button-1>", lambda e, u=urun: self.sepete_ekle(u))
+
+            y_pos += 110
+
+    def buton_hover(self, bg_id, text_id, is_enter):
+        if is_enter:
+            fade_animasyonu(self.orta_alan, bg_id, BG_SIYAH, TURUNCU)
+            self.orta_alan.itemconfig(text_id, fill=BEYAZ_METIN)
+            self.orta_alan.config(cursor="hand2")
+        else:
+            fade_animasyonu(self.orta_alan, bg_id, TURUNCU, BG_SIYAH)
+            self.orta_alan.itemconfig(text_id, fill=TURUNCU)
+            self.orta_alan.config(cursor="")
+
+    def sepete_ekle(self, urun):
+        self.siparis_listesi.append(urun)
+        self.toplam_tutar += urun["fiyat"]
+        self.sepeti_ciz()
+
+    def sepeti_ciz(self):
+        # Önceki sepet kalemlerini ve toplam tutar yazısını temizle
+        self.sag_sepet.delete("sepet_kalem")
+        
+        y_pos = 100
+        for urun in self.siparis_listesi:
+            # Sepetteki her ürün için dinamik metin oluştur
+            self.sag_sepet.create_text(30, y_pos, text=urun['ad'], font=("Segoe UI", 12), fill=BEYAZ_METIN, anchor="w", tags="sepet_kalem")
+            self.sag_sepet.create_text(300, y_pos, text=f"{urun['fiyat']} TL", font=("Segoe UI", 12, "bold"), fill=TURUNCU, anchor="e", tags="sepet_kalem")
+            y_pos += 30
+
+        # Toplam Tutar Çizgisi ve Yazısı
+        self.sag_sepet.create_line(30, 560, 300, 560, fill="#333333", width=2, tags="sepet_kalem")
+        self.sag_sepet.create_text(30, 595, text="TOPLAM", font=("Segoe UI", 16, "bold"), fill=GRI_METIN, anchor="w", tags="sepet_kalem")
+        self.sag_sepet.create_text(300, 595, text=f"{self.toplam_tutar} TL", font=("Segoe UI", 22, "bold"), fill=BEYAZ_METIN, anchor="e", tags="sepet_kalem")
+
+    def siparis_onayla(self):
+        if not self.siparis_listesi:
+            messagebox.showwarning("Uyarı", "Sepetiniz boş!")
+            return
+        
+        # Sipariş onaylanınca listeyi temizle ve ekrana yansıt
+        messagebox.showinfo("Başarılı", f"Siparişiniz alındı!\nÖdenecek Tutar: {self.toplam_tutar} TL")
+        self.siparis_listesi.clear()
+        self.toplam_tutar = 0
+        self.sepeti_ciz()
+
+if __name__ == "__main__":
+    app = PremiumSiparisSistemi()
+    app.mainloop()
